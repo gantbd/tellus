@@ -1,19 +1,21 @@
 [package]
-name = "grounding-tui-cli"
+name = "tellus-cli"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/gantbd/tellus"
 publish = false
+description = "Standalone interactive and headless Tellus application"
 
 [[bin]]
-name = "grounding-tui"
+name = "tellus"
 path = "src/main.rs"
 doc = false
 
 [dependencies]
-grounding-tui = { path = ".." }
-grounding-tui-local-client = { path = "../local-client" }
+tellus = { path = ".." }
+tellus-local-client = { path = "../local-client" }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }
 crossterm = "=0.29.0"
 serde_json = "=1.0.151"

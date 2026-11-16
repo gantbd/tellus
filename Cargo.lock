@@ -200,34 +200,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "grounding-tui"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "ratatui",
-]
-
-[[package]]
-name = "grounding-tui-cli"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "grounding-tui",
- "grounding-tui-local-client",
- "ratatui",
- "serde_json",
-]
-
-[[package]]
-name = "grounding-tui-local-client"
-version = "0.1.0"
-dependencies = [
- "grounding-tui",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -580,9 +552,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.1.5"
+version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
 dependencies = [
  "bitflags",
  "errno",
@@ -748,6 +720,34 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tellus"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+]
+
+[[package]]
+name = "tellus-cli"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "serde_json",
+ "tellus",
+ "tellus-local-client",
+]
+
+[[package]]
+name = "tellus-local-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tellus",
 ]
 
 [[package]]

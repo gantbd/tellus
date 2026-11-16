@@ -1,13 +1,15 @@
 [package]
-name = "grounding-tui-local-client"
+name = "tellus-local-client"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/gantbd/tellus"
 publish = false
+description = "Bounded loopback client for Dendrite grounding observations"
 
 [dependencies]
-grounding-tui = { path = ".." }
+tellus = { path = ".." }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 

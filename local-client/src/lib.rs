@@ -7,8 +7,8 @@ use std::{
     time::Duration,
 };
 
-use grounding_tui::{EntryV1, GroundingPort, ObservationV1};
 use serde::Deserialize;
+use tellus::{EntryV1, GroundingPort, ObservationV1};
 
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 

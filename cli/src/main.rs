@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use grounding_tui::GroundingPort;
+use tellus::GroundingPort;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.next().is_some() {
             return Err(usage().into());
         }
-        let value = grounding_tui::CAPABILITIES;
+        let value = tellus::CAPABILITIES;
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
@@ -45,20 +45,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.next().is_some() {
         return Err(usage().into());
     }
-    let port = grounding_tui_local_client::LocalPort::new(
-        endpoint,
-        token,
-        std::time::Duration::from_secs(5),
-    )
-    .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+    let port =
+        tellus_local_client::LocalPort::new(endpoint, token, std::time::Duration::from_secs(5))
+            .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
     if mode == "interactive" {
-        interactive(grounding_tui::Component::new(port))
+        interactive(tellus::Component::new(port))
     } else {
         headless(port)
     }
 }
 
-fn interactive(mut component: grounding_tui::Component) -> Result<(), Box<dyn std::error::Error>> {
+fn interactive(mut component: tellus::Component) -> Result<(), Box<dyn std::error::Error>> {
     use crossterm::event::{self, Event};
     use std::time::Duration;
     ratatui::run(|terminal| -> Result<(), Box<dyn std::error::Error>> {
@@ -67,8 +64,8 @@ fn interactive(mut component: grounding_tui::Component) -> Result<(), Box<dyn st
             terminal.draw(|frame| component.draw_in(frame, frame.area(), true))?;
             if event::poll(Duration::from_millis(50))?
                 && let Event::Key(key) = event::read()?
-                && let Some(input) = grounding_tui::translate_key(key)
-                && component.update(input, true) == grounding_tui::Lifecycle::CloseRequested
+                && let Some(input) = tellus::translate_key(key)
+                && component.update(input, true) == tellus::Lifecycle::CloseRequested
             {
                 break;
             }
@@ -77,10 +74,8 @@ fn interactive(mut component: grounding_tui::Component) -> Result<(), Box<dyn st
     })
 }
 
-fn headless(
-    mut port: grounding_tui_local_client::LocalPort,
-) -> Result<(), Box<dyn std::error::Error>> {
-    match port.observe(grounding_tui::OBSERVATION_LIMIT) {
+fn headless(mut port: tellus_local_client::LocalPort) -> Result<(), Box<dyn std::error::Error>> {
+    match port.observe(tellus::OBSERVATION_LIMIT) {
         Ok(value) => {
             println!(
                 "{}",
@@ -104,5 +99,5 @@ fn headless(
 }
 
 fn usage() -> &'static str {
-    "usage: grounding-tui capabilities | grounding-tui <interactive|headless> LOOPBACK_HOST:PORT [--token-file PATH]"
+    "usage: tellus capabilities | tellus <interactive|headless> LOOPBACK_HOST:PORT [--token-file PATH]"
 }

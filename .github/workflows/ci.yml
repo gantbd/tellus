@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out Tellus
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Audit current RustSec advisories
+        run: |
+          cargo install cargo-audit --version 0.23.0 --locked
+          cargo audit --deny warnings
+      - name: Verify workspace
+        run: make check
