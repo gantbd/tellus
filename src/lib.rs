@@ -112,25 +112,40 @@ impl Component {
     }
 
     pub fn poll(&mut self) {
+        let _ = self.poll_settlement();
+    }
+
+    pub fn poll_settlement(&mut self) -> Option<Result<(), ()>> {
+        let mut settlement = None;
         loop {
             match self.replies.try_recv() {
                 Ok(WorkerReply(Ok(value))) => {
                     self.pending = false;
                     self.observation = Some(value);
                     self.notice = "Current Grounding observation".into();
+                    settlement = Some(Ok(()));
                 }
                 Ok(WorkerReply(Err(status))) => {
                     self.pending = false;
                     self.notice = status;
+                    settlement = Some(Err(()));
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
+                    if self.pending {
+                        settlement = Some(Err(()));
+                    }
                     self.pending = false;
                     self.notice = "Grounding worker unavailable".into();
                     break;
                 }
             }
         }
+        settlement
+    }
+
+    pub const fn request_pending(&self) -> bool {
+        self.pending
     }
 
     pub fn update(&mut self, input: Input, focused: bool) -> Lifecycle {
