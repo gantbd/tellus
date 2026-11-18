@@ -1,6 +1,6 @@
 # Roadmap
 
-- [x] Typed `grounding.observe.v1` client boundary independent of MCP.
+- [x] Typed `tellus.observe.v1` client boundary independent of MCP.
 - [x] Reusable Ratatui component and separate standalone CLI.
 - [x] Bounded versioned headless observation with exact content identity.
 - [x] Real Dendrite service qualification.

@@ -1,4 +1,4 @@
-//! Loopback HTTP adapter for Dendrite's typed Grounding presentation boundary.
+//! Loopback HTTP adapter for Dendrite's typed Tellus presentation boundary.
 #![forbid(unsafe_code)]
 
 use std::{
@@ -8,7 +8,7 @@ use std::{
 };
 
 use serde::Deserialize;
-use tellus::{EntryV1, GroundingPort, ObservationV1};
+use tellus::{EntryV1, ObservationV1, TellusPort};
 
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
@@ -68,7 +68,7 @@ struct ResponseEntryV1 {
     sha256: Option<String>,
 }
 
-impl GroundingPort for LocalPort {
+impl TellusPort for LocalPort {
     type Error = ClientError;
 
     fn observe(&mut self, limit: usize) -> Result<ObservationV1, Self::Error> {
@@ -89,7 +89,7 @@ impl GroundingPort for LocalPort {
                 format!("Authorization: Bearer {token}\r\n")
             });
         let request = format!(
-            "POST /grounding/v1/observe HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
+            "POST /tellus/v1/observe HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
             self.endpoint,
             body.len(),
             authorization,
@@ -124,7 +124,7 @@ impl GroundingPort for LocalPort {
         let response: ResponseV1 = serde_json::from_slice(&bytes[separator + 4..])
             .map_err(|_| ClientError::InvalidResponse)?;
         if response.version != 1
-            || response.capability != "grounding.observe.v1"
+            || response.capability != "tellus.observe.v1"
             || response.entries.len() > limit
         {
             return Err(ClientError::InvalidResponse);

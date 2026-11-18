@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use tellus::GroundingPort;
+use tellus::TellusPort;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -80,8 +80,8 @@ fn headless(mut port: tellus_local_client::LocalPort) -> Result<(), Box<dyn std:
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
-                    "version": 1, "mode": "headless", "peer": "grounding",
-                    "capability": "grounding.observe.v1", "complete": value.complete,
+                    "version": 1, "mode": "headless", "peer": "tellus",
+                    "capability": "tellus.observe.v1", "complete": value.complete,
                     "status": value.status, "entries": value.entries.iter().map(|entry| serde_json::json!({
                         "load_id": entry.load_id, "state": entry.state,
                         "freshness": entry.freshness, "sha256": entry.sha256
@@ -91,7 +91,7 @@ fn headless(mut port: tellus_local_client::LocalPort) -> Result<(), Box<dyn std:
             if value.complete {
                 Ok(())
             } else {
-                Err(std::io::Error::other("partial Grounding observation").into())
+                Err(std::io::Error::other("partial Tellus observation").into())
             }
         }
         Err(error) => Err(std::io::Error::other(format!("{error:?}")).into()),

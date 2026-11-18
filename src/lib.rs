@@ -1,4 +1,4 @@
-//! Composable Grounding presentation over a typed, non-MCP client boundary.
+//! Composable Tellus presentation over a typed, non-MCP client boundary.
 #![forbid(unsafe_code)]
 
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
@@ -23,9 +23,9 @@ pub struct CapabilityManifest {
 
 pub const CAPABILITIES: CapabilityManifest = CapabilityManifest {
     schema: 1,
-    peer: "grounding",
-    interactive: &["grounding.observe.v1"],
-    headless: &["grounding.observe.v1"],
+    peer: "tellus",
+    interactive: &["tellus.observe.v1"],
+    headless: &["tellus.observe.v1"],
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,7 +44,7 @@ pub struct ObservationV1 {
     pub truncated: bool,
 }
 
-pub trait GroundingPort {
+pub trait TellusPort {
     type Error;
     fn observe(&mut self, limit: usize) -> Result<ObservationV1, Self::Error>;
 }
@@ -85,7 +85,7 @@ pub struct Component {
 impl Component {
     pub fn new<P>(mut port: P) -> Self
     where
-        P: GroundingPort + Send + 'static,
+        P: TellusPort + Send + 'static,
         P::Error: Send + 'static,
     {
         let (tx, rx) = sync_channel(1);
@@ -94,7 +94,7 @@ impl Component {
             while rx.recv().is_ok() {
                 let result = port
                     .observe(OBSERVATION_LIMIT)
-                    .map_err(|_| "Grounding observation unavailable".to_owned());
+                    .map_err(|_| "Tellus observation unavailable".to_owned());
                 if reply_tx.send(WorkerReply(result)).is_err() {
                     break;
                 }
@@ -105,7 +105,7 @@ impl Component {
             replies: reply_rx,
             pending: false,
             observation: None,
-            notice: "Grounding ready; refresh queued".into(),
+            notice: "Tellus ready; refresh queued".into(),
         };
         component.offer();
         component
@@ -122,7 +122,7 @@ impl Component {
                 Ok(WorkerReply(Ok(value))) => {
                     self.pending = false;
                     self.observation = Some(value);
-                    self.notice = "Current Grounding observation".into();
+                    self.notice = "Current Tellus observation".into();
                     settlement = Some(Ok(()));
                 }
                 Ok(WorkerReply(Err(status))) => {
@@ -136,7 +136,7 @@ impl Component {
                         settlement = Some(Err(()));
                     }
                     self.pending = false;
-                    self.notice = "Grounding worker unavailable".into();
+                    self.notice = "Tellus worker unavailable".into();
                     break;
                 }
             }
@@ -165,12 +165,12 @@ impl Component {
         let [body, footer] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
         let title = if focused {
-            " Grounding • focused "
+            " Tellus • focused "
         } else {
-            " Grounding "
+            " Tellus "
         };
         let lines = self.observation.as_ref().map_or_else(
-            || vec![Line::from("No current Grounding observation")],
+            || vec![Line::from("No current Tellus observation")],
             |value| {
                 let mut lines = vec![Line::from(format!(
                     "{} load(s) • status {}{}",
@@ -204,12 +204,12 @@ impl Component {
 
     fn offer(&mut self) {
         if self.pending {
-            self.notice = "Grounding refresh already pending".into();
+            self.notice = "Tellus refresh already pending".into();
         } else if self.refresh.try_send(()).is_ok() {
             self.pending = true;
-            self.notice = "Grounding refresh pending".into();
+            self.notice = "Tellus refresh pending".into();
         } else {
-            self.notice = "Grounding worker unavailable".into();
+            self.notice = "Tellus worker unavailable".into();
         }
     }
 }
