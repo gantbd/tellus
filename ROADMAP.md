@@ -6,8 +6,8 @@
 - [x] Real Dendrite service qualification.
 - [x] Workbench interactive and headless attach qualification against a real
   Dendrite service and Rune fixture through the same typed client/component.
-- [ ] Add selected surface/read navigation only after its DTO bounds,
-  provenance, content disclosure, and freshness behavior are specified.
+- [x] Add bounded, provenance-bearing SME surface planning with explicit
+  ensemble review; arbitrary surface/read navigation remains deferred.
 - [ ] Add native Workbench hosting only after Dendrite exposes a production
   lifecycle factory with explicit authentication and shutdown receipts.
 

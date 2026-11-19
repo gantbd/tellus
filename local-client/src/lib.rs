@@ -11,8 +11,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tellus::{
     EntryV1, GroundingStaleReasonV1, GroundingVerificationPort, GroundingVerificationRequestV1,
-    GroundingVerificationV1, ObservationV1, TellusPort, VerifiedGroundingSourceV1,
-    VerifiedGroundingSourcesV1,
+    GroundingVerificationV1, ObservationV1, SME_ADVISORY_BOUNDARY, SME_ENSEMBLE_QUESTION,
+    SmeEntryKindV1, SmeEntryV1, SmeOrthogonalityPairV1, SmeOrthogonalityV1, SmePlanPort,
+    SmePlanRequestV1, SmePlanSourceV1, SmePlanStatusV1, SmePlanV1, SmeRoleV1, TellusPort,
+    VerifiedGroundingSourceV1, VerifiedGroundingSourcesV1,
 };
 
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
@@ -166,6 +168,81 @@ struct GroundingSelectionResponseV1 {
     verified: bool,
 }
 
+#[derive(Serialize)]
+struct SmePlanRequestWireV1<'a> {
+    version: u8,
+    fold_load_id: &'a str,
+    lattice_load_id: &'a str,
+    tags: &'a [String],
+    depth: &'static str,
+    max_roles: u8,
+    max_surface_bytes: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmePlanResponseV1 {
+    version: u8,
+    capability: String,
+    status: String,
+    complete: bool,
+    next_action: String,
+    fold: SmePlanSourceResponseV1,
+    lattice: SmePlanSourceResponseV1,
+    tags: Vec<String>,
+    roles: Vec<SmeRoleResponseV1>,
+    orthogonality: SmeOrthogonalityResponseV1,
+    ensemble_question: String,
+    boundary: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmePlanSourceResponseV1 {
+    load_id: String,
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmeRoleResponseV1 {
+    role: String,
+    #[serde(rename = "ref")]
+    reference: String,
+    authority_sha256: String,
+    surface_sha256: String,
+    depth: String,
+    surface_version: u8,
+    entries: Vec<SmeEntryResponseV1>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmeEntryResponseV1 {
+    #[serde(default)]
+    id: Option<String>,
+    kind: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmeOrthogonalityResponseV1 {
+    all_orthogonal: bool,
+    sufficient_roles: bool,
+    pairs: Vec<SmeOrthogonalityPairResponseV1>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmeOrthogonalityPairResponseV1 {
+    role1: String,
+    role2: String,
+    orthogonal: bool,
+    facet1: String,
+    facet2: String,
+}
+
 impl TellusPort for LocalPort {
     type Error = ClientError;
 
@@ -271,6 +348,229 @@ impl GroundingVerificationPort for LocalPort {
             _ => Err(ClientError::InvalidResponse),
         }
     }
+}
+
+impl SmePlanPort for LocalPort {
+    type Error = ClientError;
+
+    fn plan_smes(&mut self, request: &SmePlanRequestV1) -> Result<SmePlanV1, Self::Error> {
+        validate_sme_request(request)?;
+        let wire = SmePlanRequestWireV1 {
+            version: 1,
+            fold_load_id: &request.fold_load_id,
+            lattice_load_id: &request.lattice_load_id,
+            tags: &request.tags,
+            depth: request.depth.as_str(),
+            max_roles: request.max_roles,
+            max_surface_bytes: request.max_surface_bytes,
+        };
+        let body = serde_json::to_vec(&wire).map_err(|_| ClientError::InvalidResponse)?;
+        let response: SmePlanResponseV1 =
+            serde_json::from_slice(&self.post("/tellus/v1/sme-plan", &body)?)
+                .map_err(|_| ClientError::InvalidResponse)?;
+        decode_sme_plan(response, request)
+    }
+}
+
+fn validate_sme_request(request: &SmePlanRequestV1) -> Result<(), ClientError> {
+    if !valid_text(&request.fold_load_id, 256)
+        || !valid_text(&request.lattice_load_id, 256)
+        || request.tags.is_empty()
+        || request.tags.len() > 16
+        || !(1..=8).contains(&request.max_roles)
+        || !(1..=131_072).contains(&request.max_surface_bytes)
+        || request.tags.iter().any(|tag| !valid_text(tag, 128))
+        || request.tags.iter().collect::<BTreeSet<_>>().len() != request.tags.len()
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    Ok(())
+}
+
+fn decode_sme_plan(
+    response: SmePlanResponseV1,
+    request: &SmePlanRequestV1,
+) -> Result<SmePlanV1, ClientError> {
+    if response.version != 1
+        || response.capability != "tellus.sme-plan.v1"
+        || response.ensemble_question != SME_ENSEMBLE_QUESTION
+        || response.boundary != SME_ADVISORY_BOUNDARY
+        || response.tags != request.tags
+        || response.roles.len() > usize::from(request.max_roles)
+        || !valid_text(&response.next_action, 1_024)
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    let status = match response.status.as_str() {
+        "current" if response.complete => SmePlanStatusV1::Current,
+        "review_required" if !response.complete => SmePlanStatusV1::ReviewRequired,
+        "unmatched" if !response.complete => SmePlanStatusV1::Unmatched,
+        _ => return Err(ClientError::InvalidResponse),
+    };
+    let fold = decode_sme_source(response.fold, &request.fold_load_id)?;
+    let lattice = decode_sme_source(response.lattice, &request.lattice_load_id)?;
+    let roles = response
+        .roles
+        .into_iter()
+        .map(|role| decode_sme_role(role, request.depth))
+        .collect::<Result<Vec<_>, _>>()?;
+    let orthogonality = decode_orthogonality(response.orthogonality, roles.len())?;
+    if matches!(status, SmePlanStatusV1::Current)
+        != (orthogonality.sufficient_roles && orthogonality.all_orthogonal)
+        || matches!(status, SmePlanStatusV1::Unmatched) != roles.is_empty()
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    Ok(SmePlanV1 {
+        status,
+        complete: response.complete,
+        next_action: response.next_action,
+        fold,
+        lattice,
+        tags: response.tags,
+        roles,
+        orthogonality,
+    })
+}
+
+fn decode_sme_source(
+    source: SmePlanSourceResponseV1,
+    expected_load_id: &str,
+) -> Result<SmePlanSourceV1, ClientError> {
+    let sha256 = parse_hex::<32>(&source.sha256).ok_or(ClientError::InvalidResponse)?;
+    if source.load_id != expected_load_id {
+        return Err(ClientError::InvalidResponse);
+    }
+    Ok(SmePlanSourceV1 {
+        load_id: source.load_id,
+        sha256,
+    })
+}
+
+fn decode_sme_role(
+    role: SmeRoleResponseV1,
+    expected_depth: tellus::GroundingDepthV1,
+) -> Result<SmeRoleV1, ClientError> {
+    if !valid_text(&role.role, 256)
+        || !valid_text(&role.reference, 256)
+        || role.depth != expected_depth.as_str()
+        || !(1..=2).contains(&role.surface_version)
+        || role.entries.is_empty()
+        || role.entries.len() > 64
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    let entries = role
+        .entries
+        .into_iter()
+        .map(|entry| decode_sme_entry(entry, role.surface_version))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ids = entries
+        .iter()
+        .filter_map(|entry| entry.id.as_ref())
+        .collect::<BTreeSet<_>>();
+    if (role.surface_version == 1 && !ids.is_empty())
+        || (role.surface_version == 2 && ids.len() != entries.len())
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    Ok(SmeRoleV1 {
+        role: role.role,
+        reference: role.reference,
+        authority_sha256: parse_hex(&role.authority_sha256).ok_or(ClientError::InvalidResponse)?,
+        surface_sha256: parse_hex(&role.surface_sha256).ok_or(ClientError::InvalidResponse)?,
+        depth: expected_depth,
+        surface_version: role.surface_version,
+        entries,
+    })
+}
+
+fn decode_sme_entry(
+    entry: SmeEntryResponseV1,
+    surface_version: u8,
+) -> Result<SmeEntryV1, ClientError> {
+    let kind = match entry.kind.as_str() {
+        "guidance" => SmeEntryKindV1::Guidance,
+        "question" => SmeEntryKindV1::Question,
+        "hazard" => SmeEntryKindV1::Hazard,
+        "probe" => SmeEntryKindV1::Probe,
+        "reference" => SmeEntryKindV1::Reference,
+        _ => return Err(ClientError::InvalidResponse),
+    };
+    if entry.text.trim().is_empty()
+        || entry.text.len() > 8_192
+        || (surface_version == 1 && entry.id.is_some())
+        || (surface_version == 2 && !entry.id.as_ref().is_some_and(|id| valid_entry_id(id)))
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    Ok(SmeEntryV1 {
+        id: entry.id,
+        kind,
+        text: entry.text,
+    })
+}
+
+fn decode_orthogonality(
+    value: SmeOrthogonalityResponseV1,
+    role_count: usize,
+) -> Result<SmeOrthogonalityV1, ClientError> {
+    if value.sufficient_roles != (role_count >= 2)
+        || (role_count < 2 && (!value.pairs.is_empty() || value.all_orthogonal))
+    {
+        return Err(ClientError::InvalidResponse);
+    }
+    let pairs = value
+        .pairs
+        .into_iter()
+        .map(|pair| {
+            if [
+                pair.role1.as_str(),
+                pair.role2.as_str(),
+                pair.facet1.as_str(),
+                pair.facet2.as_str(),
+            ]
+            .into_iter()
+            .any(|value| !valid_text(value, 256))
+            {
+                return Err(ClientError::InvalidResponse);
+            }
+            Ok(SmeOrthogonalityPairV1 {
+                role1: pair.role1,
+                role2: pair.role2,
+                orthogonal: pair.orthogonal,
+                facet1: pair.facet1,
+                facet2: pair.facet2,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(SmeOrthogonalityV1 {
+        all_orthogonal: value.all_orthogonal,
+        sufficient_roles: value.sufficient_roles,
+        pairs,
+    })
+}
+
+fn valid_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
+}
+
+fn valid_entry_id(value: &str) -> bool {
+    let mut segments = value.split('-');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    !first.is_empty()
+        && first.as_bytes()[0].is_ascii_lowercase()
+        && first
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && segments.all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
 }
 
 fn current_grounding(
@@ -389,6 +689,56 @@ mod tests {
         }
     }
 
+    fn sme_request() -> SmePlanRequestV1 {
+        SmePlanRequestV1 {
+            fold_load_id: "fold".into(),
+            lattice_load_id: "lattice".into(),
+            tags: vec!["data-handling".into()],
+            depth: GroundingDepthV1::Ambient,
+            max_roles: 4,
+            max_surface_bytes: 65_536,
+        }
+    }
+
+    fn sme_response() -> SmePlanResponseV1 {
+        SmePlanResponseV1 {
+            version: 1,
+            capability: "tellus.sme-plan.v1".into(),
+            status: "review_required".into(),
+            complete: false,
+            next_action: "add independent coverage".into(),
+            fold: SmePlanSourceResponseV1 {
+                load_id: "fold".into(),
+                sha256: lower_hex(&[1; 32]),
+            },
+            lattice: SmePlanSourceResponseV1 {
+                load_id: "lattice".into(),
+                sha256: lower_hex(&[2; 32]),
+            },
+            tags: vec!["data-handling".into()],
+            roles: vec![SmeRoleResponseV1 {
+                role: "privacy".into(),
+                reference: "rune:privacy".into(),
+                authority_sha256: lower_hex(&[3; 32]),
+                surface_sha256: lower_hex(&[4; 32]),
+                depth: "ambient".into(),
+                surface_version: 2,
+                entries: vec![SmeEntryResponseV1 {
+                    id: Some("purpose-boundary".into()),
+                    kind: "guidance".into(),
+                    text: "retain the declared purpose".into(),
+                }],
+            }],
+            orthogonality: SmeOrthogonalityResponseV1 {
+                all_orthogonal: false,
+                sufficient_roles: false,
+                pairs: vec![],
+            },
+            ensemble_question: SME_ENSEMBLE_QUESTION.into(),
+            boundary: SME_ADVISORY_BOUNDARY.into(),
+        }
+    }
+
     #[test]
     fn exact_current_response_preserves_sources_and_members() {
         let request = request();
@@ -468,5 +818,37 @@ mod tests {
             GroundingStaleReasonV1::GroundingMismatch
         );
         assert!(stale_reason(Some("invented")).is_err());
+    }
+
+    #[test]
+    fn sme_plan_preserves_bounded_provenance_and_requires_review() {
+        let plan = decode_sme_plan(sme_response(), &sme_request()).unwrap();
+        assert_eq!(plan.status, SmePlanStatusV1::ReviewRequired);
+        assert!(!plan.complete);
+        assert_eq!(plan.fold.sha256, [1; 32]);
+        assert_eq!(plan.lattice.sha256, [2; 32]);
+        assert_eq!(plan.roles[0].authority_sha256, [3; 32]);
+        assert_eq!(plan.roles[0].surface_sha256, [4; 32]);
+        assert_eq!(
+            plan.roles[0].entries[0].id.as_deref(),
+            Some("purpose-boundary")
+        );
+    }
+
+    #[test]
+    fn sme_plan_rejects_advisory_leaks_and_invented_surface_grammar() {
+        let request = sme_request();
+        let mut wrong_question = sme_response();
+        wrong_question.ensemble_question = "looks good?".into();
+        assert!(decode_sme_plan(wrong_question, &request).is_err());
+
+        let mut invented_kind = sme_response();
+        invented_kind.roles[0].entries[0].kind = "command".into();
+        assert!(decode_sme_plan(invented_kind, &request).is_err());
+
+        let mut false_completion = sme_response();
+        false_completion.status = "current".into();
+        false_completion.complete = true;
+        assert!(decode_sme_plan(false_completion, &request).is_err());
     }
 }

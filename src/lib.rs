@@ -24,8 +24,16 @@ pub struct CapabilityManifest {
 pub const CAPABILITIES: CapabilityManifest = CapabilityManifest {
     schema: 1,
     peer: "tellus",
-    interactive: &["tellus.observe.v1", "tellus.verify-grounding.v1"],
-    headless: &["tellus.observe.v1", "tellus.verify-grounding.v1"],
+    interactive: &[
+        "tellus.observe.v1",
+        "tellus.verify-grounding.v1",
+        "tellus.sme-plan.v1",
+    ],
+    headless: &[
+        "tellus.observe.v1",
+        "tellus.verify-grounding.v1",
+        "tellus.sme-plan.v1",
+    ],
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +127,93 @@ pub trait GroundingVerificationPort {
         &mut self,
         request: &GroundingVerificationRequestV1,
     ) -> Result<GroundingVerificationV1, Self::Error>;
+}
+
+pub const SME_ENSEMBLE_QUESTION: &str = "do we have the right ensemble?";
+pub const SME_ADVISORY_BOUNDARY: &str = "SME routing and retrieval are advisory evidence, not stakeholder equity, independence, approval, authority, or proof";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmePlanRequestV1 {
+    pub fold_load_id: String,
+    pub lattice_load_id: String,
+    pub tags: Vec<String>,
+    pub depth: GroundingDepthV1,
+    pub max_roles: u8,
+    pub max_surface_bytes: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmePlanStatusV1 {
+    Current,
+    ReviewRequired,
+    Unmatched,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmePlanSourceV1 {
+    pub load_id: String,
+    pub sha256: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmeEntryKindV1 {
+    Guidance,
+    Question,
+    Hazard,
+    Probe,
+    Reference,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmeEntryV1 {
+    pub id: Option<String>,
+    pub kind: SmeEntryKindV1,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmeRoleV1 {
+    pub role: String,
+    pub reference: String,
+    pub authority_sha256: [u8; 32],
+    pub surface_sha256: [u8; 32],
+    pub depth: GroundingDepthV1,
+    pub surface_version: u8,
+    pub entries: Vec<SmeEntryV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmeOrthogonalityPairV1 {
+    pub role1: String,
+    pub role2: String,
+    pub orthogonal: bool,
+    pub facet1: String,
+    pub facet2: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmeOrthogonalityV1 {
+    pub all_orthogonal: bool,
+    pub sufficient_roles: bool,
+    pub pairs: Vec<SmeOrthogonalityPairV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmePlanV1 {
+    pub status: SmePlanStatusV1,
+    pub complete: bool,
+    pub next_action: String,
+    pub fold: SmePlanSourceV1,
+    pub lattice: SmePlanSourceV1,
+    pub tags: Vec<String>,
+    pub roles: Vec<SmeRoleV1>,
+    pub orthogonality: SmeOrthogonalityV1,
+}
+
+pub trait SmePlanPort {
+    type Error;
+
+    fn plan_smes(&mut self, request: &SmePlanRequestV1) -> Result<SmePlanV1, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
