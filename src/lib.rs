@@ -24,8 +24,8 @@ pub struct CapabilityManifest {
 pub const CAPABILITIES: CapabilityManifest = CapabilityManifest {
     schema: 1,
     peer: "tellus",
-    interactive: &["tellus.observe.v1"],
-    headless: &["tellus.observe.v1"],
+    interactive: &["tellus.observe.v1", "tellus.verify-grounding.v1"],
+    headless: &["tellus.observe.v1", "tellus.verify-grounding.v1"],
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +47,78 @@ pub struct ObservationV1 {
 pub trait TellusPort {
     type Error;
     fn observe(&mut self, limit: usize) -> Result<ObservationV1, Self::Error>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroundingDepthV1 {
+    Ambient,
+    Activated,
+    Reference,
+}
+
+impl GroundingDepthV1 {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ambient => "ambient",
+            Self::Activated => "activated",
+            Self::Reference => "reference",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GroundingSelectionV1 {
+    pub member: [u8; 16],
+    pub authority_sha256: [u8; 32],
+    pub surface_sha256: [u8; 32],
+    pub depth: GroundingDepthV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroundingVerificationRequestV1 {
+    pub method_sha256: [u8; 32],
+    pub fold_sha256: [u8; 32],
+    pub orthogonality_sha256: [u8; 32],
+    pub selections: Vec<GroundingSelectionV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedGroundingSourceV1 {
+    pub load_id: String,
+    pub sha256: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedGroundingSourcesV1 {
+    pub method: VerifiedGroundingSourceV1,
+    pub fold: VerifiedGroundingSourceV1,
+    pub orthogonality: VerifiedGroundingSourceV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroundingStaleReasonV1 {
+    SourceMissing,
+    SourceChanged,
+    GroundingMissing,
+    GroundingMismatch,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GroundingVerificationV1 {
+    Current {
+        sources: VerifiedGroundingSourcesV1,
+        members: Vec<[u8; 16]>,
+    },
+    Stale(GroundingStaleReasonV1),
+}
+
+pub trait GroundingVerificationPort {
+    type Error;
+
+    fn verify_grounding(
+        &mut self,
+        request: &GroundingVerificationRequestV1,
+    ) -> Result<GroundingVerificationV1, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
